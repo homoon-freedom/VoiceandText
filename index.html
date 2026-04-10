@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 보이스 레코더 (삭제 기능 추가)</title>
+    <title>AI 보이스 레코더 (제목 수정 기능)</title>
     <style>
         :root { --primary: #1a73e8; --success: #34a853; --warning: #fbbc04; --danger: #ea4335; --kakao: #fee500; }
         body { font-family: 'Pretendard', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
@@ -23,16 +23,16 @@
 
         #recordList { width: 100%; max-width: 500px; margin-top: 20px; }
         .record-item { background: white; padding: 18px; border-radius: 15px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: left; position: relative; }
-        .record-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-right: 30px; } /* 삭제 버튼 공간 확보 */
-        .record-title { font-size: 1.1rem; font-weight: bold; color: #333; word-break: break-all; margin-right: 10px; }
-        .record-date { font-size: 0.75rem; color: #888; white-space: nowrap; }
+        .record-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-right: 30px; }
         
-        /* 삭제 버튼 스타일 */
-        .btn-delete { 
-            position: absolute; top: 15px; right: 15px; 
-            background: none; border: none; color: #ccc; 
-            font-size: 1.2rem; cursor: pointer; min-width: auto; padding: 5px;
-        }
+        /* 제목 스타일 및 수정 버튼 */
+        .title-container { display: flex; align-items: center; cursor: pointer; max-width: 70%; }
+        .title-container:hover .record-title { color: var(--primary); }
+        .record-title { font-size: 1.1rem; font-weight: bold; color: #333; word-break: break-all; transition: color 0.2s; }
+        .btn-edit-icon { background: none; border: none; color: #aaa; cursor: pointer; font-size: 0.9rem; padding: 0 5px; min-width: auto; }
+        
+        .record-date { font-size: 0.75rem; color: #888; white-space: nowrap; }
+        .btn-delete { position: absolute; top: 15px; right: 15px; background: none; border: none; color: #ccc; font-size: 1.2rem; cursor: pointer; min-width: auto; padding: 5px; }
         .btn-delete:hover { color: var(--danger); }
 
         .record-text { font-size: 0.95rem; background: #f8f9fa; padding: 12px; border-radius: 10px; margin: 10px 0; border-left: 5px solid var(--primary); white-space: pre-wrap; color: #444; }
@@ -150,11 +150,13 @@
         const card = document.createElement('div');
         card.className = 'record-item';
         
-        // 삭제 기능 구현을 위해 HTML 구조에 삭제 버튼 추가 (onclick="deleteRecord")
         card.innerHTML = `
             <button class="btn-delete" onclick="deleteRecord(this, '${url}')" title="삭제">✕</button>
             <div class="record-header">
-                <div class="record-title">${title}</div>
+                <div class="title-container" onclick="editTitle(this)" title="제목 수정">
+                    <div class="record-title">${title}</div>
+                    <button class="btn-edit-icon">✎</button>
+                </div>
                 <div class="record-date">${new Date().toLocaleString()}</div>
             </div>
             <div class="record-text">${text || "(인식된 텍스트가 없습니다)"}</div>
@@ -164,31 +166,49 @@
         recordList.prepend(card);
     }
 
-    // 삭제 함수 추가
+    // 제목 수정 함수
+    function editTitle(container) {
+        const titleElement = container.querySelector('.record-title');
+        const oldTitle = titleElement.innerText;
+        const newTitle = prompt("새 제목을 입력하세요:", oldTitle);
+        
+        if (newTitle !== null && newTitle.trim() !== "") {
+            titleElement.innerText = newTitle;
+            // 카카오톡 공유 시 제목 데이터도 업데이트하려면 버튼의 파라미터를 갱신해야 하지만, 
+            // 공유 시점에 DOM에서 다시 읽어오도록 shareToKakao를 수정하는 것이 더 깔끔합니다.
+        }
+    }
+
     function deleteRecord(btn, url) {
         if (confirm("이 녹음 기록을 삭제하시겠습니까?")) {
             const card = btn.closest('.record-item');
             card.remove();
-            URL.revokeObjectURL(url); // 메모리 해제
+            URL.revokeObjectURL(url);
         }
     }
 
-    async function shareToKakao(url, text, title) {
+    // 제목 수정을 반영하기 위해 공유 함수 내에서 제목을 실시간으로 가져오도록 수정
+    async function shareToKakao(url, text, defaultTitle) {
         try {
+            // 클릭된 버튼이 속한 카드의 현재 제목을 가져옴
+            const card = event.target.closest('.record-item');
+            const currentTitle = card.querySelector('.record-title').innerText;
+
             const response = await fetch(url);
             const blob = await response.blob();
-            const file = new File([blob], `${title}.mp4`, { type: "audio/mp4" });
+            const file = new File([blob], `${currentTitle}.mp4`, { type: "audio/mp4" });
+            
             if (navigator.share) {
                 navigator.share({ 
-                    title: title, 
-                    text: `[${title} 내용]\n${text}`, 
+                    title: currentTitle, 
+                    text: `[${currentTitle} 내용]\n${text}`, 
                     files: [file] 
                 }).catch(console.error);
             } else {
                 alert("공유를 지원하지 않는 브라우저입니다.");
             }
         } catch (e) {
-            alert("파일을 가져오는 데 실패했습니다.");
+            alert("공유 처리 중 오류가 발생했습니다.");
         }
     }
 </script>
