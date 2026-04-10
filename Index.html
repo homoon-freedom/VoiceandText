@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 보이스 레코더 (제목 지정)</title>
+    <style>
+        :root { --primary: #1a73e8; --success: #34a853; --warning: #fbbc04; --danger: #ea4335; --kakao: #fee500; }
+        body { font-family: 'Pretendard', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .container { background: white; padding: 2rem; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); width: 100%; max-width: 500px; text-align: center; }
+        h1 { color: var(--primary); font-size: 1.4rem; margin-top: 0; }
+        
+        .controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; }
+        button { padding: 12px 24px; border: none; border-radius: 12px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: all 0.2s; min-width: 120px; }
+        
+        .btn-start { background-color: var(--primary); color: white; }
+        .btn-pause { background-color: var(--warning); color: #333; }
+        .btn-resume { background-color: var(--success); color: white; }
+        .btn-stop { background-color: var(--danger); color: white; }
+        
+        #status { font-size: 0.9rem; margin-bottom: 12px; font-weight: bold; color: var(--primary); height: 20px; }
+        #transcript { width: 100%; height: 120px; padding: 12px; border: 1px solid #ddd; border-radius: 12px; box-sizing: border-box; font-size: 1rem; margin-bottom: 10px; background: #fafafa; resize: none; line-height: 1.5; }
+
+        /* 리스트 스타일 확장 */
+        #recordList { width: 100%; max-width: 500px; margin-top: 20px; }
+        .record-item { background: white; padding: 18px; border-radius: 15px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: left; }
+        .record-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+        .record-title { font-size: 1.1rem; font-weight: bold; color: #333; word-break: break-all; margin-right: 10px; }
+        .record-date { font-size: 0.75rem; color: #888; white-space: nowrap; }
+        .record-text { font-size: 0.95rem; background: #f8f9fa; padding: 12px; border-radius: 10px; margin: 10px 0; border-left: 5px solid var(--primary); white-space: pre-wrap; color: #444; }
+        audio { width: 100%; height: 40px; }
+        .btn-kakao { background-color: var(--kakao); color: #3c1e1e; border: none; padding: 10px 15px; border-radius: 10px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>보이스 레코더</h1>
+    <div id="status">준비 완료</div>
+    
+    <div class="controls">
+        <button id="mainBtn" class="btn-start">녹음 시작</button>
+        <button id="stopBtn" class="btn-stop" disabled>정지/저장</button>
+    </div>
+
+    <textarea id="transcript" placeholder="음성 변환 내용이 여기에 표시됩니다..." readonly></textarea>
+</div>
+
+<div id="recordList"></div>
+
+<script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let finalTranscript = ""; 
+
+    const mainBtn = document.getElementById('mainBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusText = document.getElementById('status');
+    const transcriptArea = document.getElementById('transcript');
+    const recordList = document.getElementById('recordList');
+
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'ko-KR';
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    recognition.onresult = (e) => {
+        let interimTranscript = "";
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+            if (e.results[i].isFinal) {
+                finalTranscript += e.results[i][0].transcript + " ";
+            } else {
+                interimTranscript += e.results[i][0].transcript;
+            }
+        }
+        transcriptArea.value = finalTranscript + interimTranscript;
+    };
+
+    mainBtn.onclick = async () => {
+        if (!mediaRecorder || mediaRecorder.state === "inactive") {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                finalTranscript = "";
+                transcriptArea.value = "";
+
+                mediaRecorder.ondataavailable = (e) => audioChunks.push(e.data);
+                mediaRecorder.onstop = () => {
+                    // 녹음 중지 시 제목 입력 받기
+                    let userTitle = prompt("녹음 파일의 제목을 입력하세요:", `새 녹음_${new Date().toLocaleTimeString()}`);
+                    if (userTitle === null) userTitle = "무제 녹음"; // 취소 시
+                    
+                    const blob = new Blob(audioChunks, { type: 'audio/mp4' });
+                    addRecordToList(blob, transcriptArea.value, userTitle);
+                };
+
+                mediaRecorder.start();
+                recognition.start();
+                updateUI("recording");
+            } catch (err) { alert("마이크 권한이 필요합니다."); }
+        } 
+        else if (mediaRecorder.state === "recording") {
+            mediaRecorder.pause();
+            recognition.stop();
+            updateUI("paused");
+        } 
+        else if (mediaRecorder.state === "paused") {
+            mediaRecorder.resume();
+            recognition.start();
+            updateUI("recording");
+        }
+    };
+
+    stopBtn.onclick = () => {
+        if (mediaRecorder) {
+            mediaRecorder.stop();
+            recognition.stop();
+            updateUI("inactive");
+        }
+    };
+
+    function updateUI(state) {
+        if (state === "recording") {
+            mainBtn.innerText = "일시 정지";
+            mainBtn.className = "btn-pause";
+            stopBtn.disabled = false;
+            statusText.innerText = "🔴 녹음 중...";
+        } else if (state === "paused") {
+            mainBtn.innerText = "다시 시작";
+            mainBtn.className = "btn-resume";
+            statusText.innerText = "⏸️ 일시 정지됨";
+        } else {
+            mainBtn.innerText = "녹음 시작";
+            mainBtn.className = "btn-start";
+            stopBtn.disabled = true;
+            statusText.innerText = "준비 완료";
+        }
+    }
+
+    function addRecordToList(blob, text, title) {
+        const url = URL.createObjectURL(blob);
+        const card = document.createElement('div');
+        card.className = 'record-item';
+        card.innerHTML = `
+            <div class="record-header">
+                <div class="record-title">${title}</div>
+                <div class="record-date">${new Date().toLocaleString()}</div>
+            </div>
+            <div class="record-text">${text || "(인식된 텍스트가 없습니다)"}</div>
+            <audio src="${url}" controls></audio>
+            <button class="btn-kakao" onclick="shareToKakao('${url}', '${text.replace(/'/g, "\\'")}', '${title.replace(/'/g, "\\'")}')">카카오톡으로 공유</button>
+        `;
+        recordList.prepend(card);
+    }
+
+    async function shareToKakao(url, text, title) {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const file = new File([blob], `${title}.mp4`, { type: "audio/mp4" });
+        if (navigator.share) {
+            navigator.share({ 
+                title: title, 
+                text: `[${title} 내용]\n${text}`, 
+                files: [file] 
+            }).catch(console.error);
+        } else {
+            alert("공유를 지원하지 않는 브라우저입니다.");
+        }
+    }
+</script>
+
+</body>
+</html>
